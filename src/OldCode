@@ -1,0 +1,136 @@
+var CLIENT_ID = ''; // From your OAuth client
+var CLIENT_SECRET = ''; // From your OAuth client
+
+function getService() {
+  return OAuth2.createService('YouTube')
+    .setAuthorizationBaseUrl('https://accounts.google.com/o/oauth2/auth')
+    .setTokenUrl('https://oauth2.googleapis.com/token')
+    .setClientId(CLIENT_ID)
+    .setClientSecret(CLIENT_SECRET)
+    .setCallbackFunction('authCallback')
+    .setPropertyStore(PropertiesService.getUserProperties())
+    .setScope('https://www.googleapis.com/auth/youtube.upload');
+}
+
+function authCallback(request) {
+  var service = getService();
+  var authorized = service.handleCallback(request);
+  if (authorized) {
+    return HtmlService.createHtmlOutput('Success! You can close this tab.');
+  } else {
+    return HtmlService.createHtmlOutput('Authorization failed.');
+  }
+}
+
+function getAuthorizationUrl() {
+  var service = getService();
+  if (!service.hasAccess()) {
+    var authorizationUrl = service.getAuthorizationUrl();
+    Logger.log('Open the following URL and re-run the script: %s',
+        authorizationUrl);
+  } else {
+    Logger.log('Service already has access.');
+  }
+}
+
+
+
+// Upload Random Viddeo 
+function uploadRandomVideoToYouTube() {
+  var service = getService();
+  if (!service.hasAccess()) {
+    Logger.log('Authorization required: ' + service.getAuthorizationUrl());
+    return;
+  }
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  var startRow = 2;
+  var endRow = 180;
+  var randomRow = Math.floor(Math.random() * (endRow - startRow + 1)) + startRow;
+  
+  var title = sheet.getRange("A" + randomRow).getValue();
+  var url = sheet.getRange("B" + randomRow).getValue();
+  var tags = sheet.getRange("C" + randomRow).getValue().split(',');
+  var description = sheet.getRange("D" + randomRow).getValue();
+  
+  Logger.log('Processing video at row ' + randomRow + ' with URL: ' + url);
+  
+  try {
+    var metadata = {
+      snippet: {
+        title: title,
+        description: description,
+        tags: tags,
+        categoryId: '10'
+      },
+      status: {
+        privacyStatus: 'public',
+        selfDeclaredMadeForKids: false,
+        embeddable: true,
+      }
+    };
+    
+    Logger.log('Initiating upload session...');
+    var initiateResponse = UrlFetchApp.fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + service.getAccessToken(),
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': 'video/*'
+      },
+      payload: JSON.stringify(metadata),
+      muteHttpExceptions: true
+    });
+    
+    if (initiateResponse.getResponseCode() != 200) {
+      throw new Error('Failed to initiate upload: ' + initiateResponse.getContentText());
+    }
+    
+    var uploadUrl = initiateResponse.getHeaders()['Location'];
+    Logger.log('Upload URL obtained: ' + uploadUrl);
+    
+    Logger.log('Fetching video from URL: ' + url);
+    var videoResponse = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
+    if (videoResponse.getResponseCode() != 200) {
+      throw new Error('Failed to fetch video: ' + videoResponse.getContentText());
+    }
+    var videoBlob = videoResponse.getBlob();
+    Logger.log('Video fetched successfully. Size: ' + videoBlob.getBytes().length + ' bytes');
+    
+    var chunkSize = 5 * 1024 * 1024; // 5MB chunks
+    var totalSize = videoBlob.getBytes().length;
+    var uploadedSize = 0;
+    
+    while (uploadedSize < totalSize) {
+      var chunk = videoBlob.getBytes().slice(uploadedSize, Math.min(uploadedSize + chunkSize, totalSize));
+      var uploadResponse = UrlFetchApp.fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': videoBlob.getContentType(),
+          'Content-Range': 'bytes ' + uploadedSize + '-' + (uploadedSize + chunk.length - 1) + '/' + totalSize
+        },
+        payload: chunk,
+        muteHttpExceptions: true
+      });
+      
+      var responseCode = uploadResponse.getResponseCode();
+      Logger.log('Chunk upload response code: ' + responseCode);
+      
+      if (responseCode == 200 || responseCode == 201) {
+        var result = JSON.parse(uploadResponse.getContentText());
+        Logger.log('Video uploaded successfully! Video ID: ' + result.id);
+        sheet.getRange("E" + randomRow).setValue("Uploaded - ID: " + result.id);
+        break;
+      } else if (responseCode == 308) {
+        uploadedSize += chunk.length;
+        Logger.log('Uploaded ' + uploadedSize + ' of ' + totalSize + ' bytes');
+      } else {
+        throw new Error('Upload failed: ' + uploadResponse.getContentText());
+      }
+    }
+  } catch (error) {
+    Logger.log('Error uploading video for title ' + title + ': ' + error);
+    sheet.getRange("E" + randomRow).setValue("Upload Failed: " + error.message);
+  }
+}
