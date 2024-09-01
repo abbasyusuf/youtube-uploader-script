@@ -23,7 +23,7 @@ This repository contains a Google Apps Script project designed to automate the p
 
 ## Usage
 
-Detailed usage instructions and API documentation can be found in the [USAGE.md](USAGE.md) file.
+Detailed usage instructions and API documentation can be found in the [USAGE.md](docs/USAGE.md) file.
 
 ## Privacy Policy
 
