@@ -1,0 +1,34 @@
+# Ignore Mac system files
+.DS_Store
+
+# Ignore node_modules folder if you decide to use npm in the future
+node_modules
+
+# Ignore all text files
+*.txt
+
+# Ignore files related to API keys
+.env
+
+# Ignore IDEA IDE files
+.idea
+
+# Ignore VSCode files
+.vscode
+
+# Ignore any log files
+*.log
+
+# Ignore any files with sensitive information (customize this based on your needs)
+secrets.json
+config.json
+
+# Ignore any backup files
+*.bak
+
+# Ignore any temporary files
+*.tmp
+*~
+
+# Ignore Google Apps Script files that aren't needed in the repo
+.clasp.json
